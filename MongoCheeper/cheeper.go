@@ -12,11 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type Insertion interface {
-	Insert(client *mongo.Client)
-}
-
-type Users struct {
+type User struct {
 	ID    primitive.ObjectID `bson:"_id"`
 	Name  string             `bson:"name"`
 	Login string             `bson:"login"`
@@ -34,6 +30,62 @@ type Messages struct {
 	Text      string             `bson:"text"`
 }
 
+type BaseRepository struct {
+	collection *mongo.Collection
+}
+
+type userRepository struct {
+	BaseRepository
+}
+
+type friendRepository struct {
+	BaseRepository
+}
+
+type messageRepository struct {
+	BaseRepository
+}
+
+type UserRepository interface {
+	Insert(ctx context.Context, user User) error
+	FindByID(ctx context.Context, id primitive.ObjectID) (User, error)
+}
+
+type MessageRepository interface {
+	Insert(ctx context.Context, message Messages) error
+}
+
+type FriendsRepository interface {
+	Insert(ctx context.Context, friend Friends) error
+	FriendsByTimeRange(ctx context.Context, user User, startTime, endTime time.Time) ([]Friends, error)
+	FriendsByUser(ctx context.Context, user User, userRepo *userRepository) ([]string, error)
+	CountFriends(ctx context.Context, user User) (int64, error)
+}
+
+func NewUserRepository(client *mongo.Client) *userRepository {
+	return &userRepository{
+		BaseRepository: BaseRepository{
+			collection: client.Database("cheeper").Collection("users"),
+		},
+	}
+}
+
+func NewMessageRepository(client *mongo.Client) *messageRepository {
+	return &messageRepository{
+		BaseRepository: BaseRepository{
+			collection: client.Database("cheeper").Collection("messages"),
+		},
+	}
+}
+
+func NewFriendRepository(client *mongo.Client) *friendRepository {
+	return &friendRepository{
+		BaseRepository: BaseRepository{
+			collection: client.Database("cheeper").Collection("friends"),
+		},
+	}
+}
+
 func connectDB() (*mongo.Client, error) {
 	clientOptions := options.Client().ApplyURI("mongodb://localhost:27017")
 	client, err := mongo.Connect(context.TODO(), clientOptions)
@@ -48,37 +100,35 @@ func connectDB() (*mongo.Client, error) {
 	return client, nil
 }
 
-func Insert(client *mongo.Client, insertion Insertion) {
-	insertion.Insert(client)
+func (r *userRepository) Insert(ctx context.Context, user User) error {
+	_, err := r.collection.InsertOne(ctx, user)
+	return err
 }
 
-func (u Users) Insert(client *mongo.Client) {
-	collection := client.Database("cheeper").Collection("users")
-	_, err := collection.InsertOne(context.TODO(), u)
-	if err != nil {
-		log.Printf("Ошибка при вставке пользователя: %v", err)
+func (r *userRepository) FindByID(ctx context.Context, id primitive.ObjectID) (User, error) {
+	filter := bson.M{
+		"_id": id,
 	}
-}
 
-func (m Messages) Insert(client *mongo.Client) {
-	collection := client.Database("cheeper").Collection("messages")
-	_, err := collection.InsertOne(context.TODO(), m)
+	var user User
+	err := r.collection.FindOne(ctx, filter).Decode(&user)
 	if err != nil {
-		log.Printf("Ошибка при вставке сообщения: %v", err)
+		return User{}, err
 	}
+	return user, nil
 }
 
-func (f Friends) Insert(client *mongo.Client) {
-	collection := client.Database("cheeper").Collection("friends")
-	_, err := collection.InsertOne(context.TODO(), f)
-	if err != nil {
-		log.Printf("Ошибка при добавлении новой дружбы: %v", err)
-	}
+func (r *messageRepository) Insert(ctx context.Context, message Messages) error {
+	_, err := r.collection.InsertOne(ctx, message)
+	return err
 }
 
-func getFriendsByTimeRange(client *mongo.Client, user Users, startTime, endTime time.Time) ([]Friends, error) {
-	collection := client.Database("cheeper").Collection("friends")
+func (r *friendRepository) Insert(ctx context.Context, friend Friends) error {
+	_, err := r.collection.InsertOne(ctx, friend)
+	return err
+}
 
+func (r *friendRepository) FriendsByTimeRange(ctx context.Context, user User, startTime, endTime time.Time) ([]Friends, error) {
 	filter := bson.M{
 		"startDate": bson.M{
 			"$gte": startTime,
@@ -87,58 +137,39 @@ func getFriendsByTimeRange(client *mongo.Client, user Users, startTime, endTime 
 		"user1": user.ID,
 	}
 
-	cursor, err := collection.Find(context.TODO(), filter)
+	cursor, err := r.collection.Find(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(context.TODO())
+	defer cursor.Close(ctx)
 
 	var friendships []Friends
-	if err = cursor.All(context.TODO(), &friendships); err != nil {
+	if err = cursor.All(ctx, &friendships); err != nil {
 		return nil, err
 	}
 
 	return friendships, nil
 }
 
-func findUser(client *mongo.Client, friend Friends) (Users, error) {
-	usersCollection := client.Database("cheeper").Collection("users")
-
-	filter := bson.M{
-		"_id": friend.User2,
-	}
-
-	var user Users
-	err := usersCollection.FindOne(context.TODO(), filter).Decode(&user)
-	if err != nil {
-		return Users{}, err
-	}
-
-	return user, nil
-
-}
-
-func getFriendsByUser(client *mongo.Client, user Users) ([]string, error) {
-	friendsCollection := client.Database("cheeper").Collection("friends")
-
-	opts := options.Find().SetSort(bson.M{"age": 1})
+func (r *friendRepository) FriendsByUser(ctx context.Context, user User, userRepo *userRepository) ([]string, error) {
+	opts := options.Find().SetSort(bson.M{"name": 1})
 	filter := bson.M{
 		"user1": user.ID,
 	}
 
-	cursor, err := friendsCollection.Find(context.TODO(), filter, opts)
+	cursor, err := r.collection.Find(ctx, filter, opts)
 	if err != nil {
 		return nil, err
 	}
-	defer cursor.Close(context.TODO())
+	defer cursor.Close(ctx)
 
 	var frndNames []string
-	for cursor.Next(context.TODO()) {
+	for cursor.Next(ctx) {
 		var friend Friends
 		if err = cursor.Decode(&friend); err != nil {
 			return nil, err
 		}
-		usr, err := findUser(client, friend)
+		usr, err := userRepo.FindByID(ctx, friend.User2)
 		if err != nil {
 			return nil, err
 		}
@@ -149,15 +180,20 @@ func getFriendsByUser(client *mongo.Client, user Users) ([]string, error) {
 
 }
 
-func countFriends(client *mongo.Client, user Users) (int, error) {
-	friends, err := getFriendsByUser(client, user)
+func (r *friendRepository) CountFriends(ctx context.Context, user User) (int64, error) {
+	filter := bson.M{
+		"user1": user.ID,
+	}
+
+	count, err := r.collection.CountDocuments(ctx, filter)
 	if err != nil {
 		return 0, err
 	}
-	return len(friends), nil
+
+	return count, nil
 }
 
-func PrintFrnd(friendships *[]Friends) {
+func PrintFriends(friendships *[]Friends) {
 	for _, frnd := range *friendships {
 		fmt.Printf("User1: %v, user2: %v, startDate: %v\n", frnd.User1, frnd.User2, frnd.StartDate)
 	}
@@ -165,16 +201,24 @@ func PrintFrnd(friendships *[]Friends) {
 
 func main() {
 	//Подключение к базе данных
-	client, _ := connectDB()
-	if client == nil {
+	client, err := connectDB()
+	if err != nil {
 		log.Fatal("Ошибка подключения к базе данных")
 	}
+
+	userRepo := NewUserRepository(client)
+	messageRepo := NewMessageRepository(client)
+	friendRepo := NewFriendRepository(client)
+
+	ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
+	defer cancel()
 
 	hexUser1, _ := primitive.ObjectIDFromHex("681c82fe89aff140d966aeb9")
 	hexUser2, _ := primitive.ObjectIDFromHex("681c82fe89aff140d966aebd")
 
 	//Добавление нового пользователя, сообщения, друга
-	newUser := Users{
+	newUser := User{
+		ID:    primitive.NewObjectID(),
 		Name:  "NewName11",
 		Login: "NewLogin11",
 	}
@@ -191,11 +235,22 @@ func main() {
 		StartDate: time.Now(),
 	}
 
-	Insert(client, newUser)
-	Insert(client, newMessage)
-	Insert(client, newFriend)
+	err = userRepo.Insert(ctx, newUser)
+	if err != nil {
+		log.Println(err)
+	}
 
-	user := Users{
+	err = messageRepo.Insert(ctx, newMessage)
+	if err != nil {
+		log.Println(err)
+	}
+
+	err = friendRepo.Insert(ctx, newFriend)
+	if err != nil {
+		log.Println(err)
+	}
+
+	user := User{
 		ID:    hexUser1,
 		Name:  "name1",
 		Login: "login1",
@@ -204,14 +259,14 @@ func main() {
 	//Получение друзей у заданного пользователя за последние 2 часа
 	endTime := time.Now()
 	startTime := endTime.Add(-24 * time.Hour)
-	friendships, err := getFriendsByTimeRange(client, user, startTime, endTime)
+	friendships, err := friendRepo.FriendsByTimeRange(ctx, user, startTime, endTime)
 	if err != nil {
 		log.Printf("Ошибка при получении друзей: %v", err)
 	}
-	PrintFrnd(&friendships)
+	PrintFriends(&friendships)
 
 	//Получение упорядоченного списка имен друзей заданного пользователя
-	frndNames, err := getFriendsByUser(client, user)
+	frndNames, err := friendRepo.FriendsByUser(ctx, user, userRepo)
 	if err != nil {
 		log.Print(err)
 	}
@@ -221,7 +276,7 @@ func main() {
 	}
 
 	//Вычисление количества друзей для заданного пользователя
-	count, err := countFriends(client, user)
+	count, err := friendRepo.CountFriends(ctx, user)
 	if err != nil {
 		log.Print(err)
 	}
