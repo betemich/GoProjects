@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,4 +18,20 @@ var nextId = 0
 
 func getTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, tasks)
+}
+
+func getTask(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	for _, task := range tasks {
+		if task.ID == id {
+			c.JSON(http.StatusOK, task)
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
 }
