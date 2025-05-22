@@ -35,3 +35,16 @@ func getTask(c *gin.Context) {
 	}
 	c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
 }
+
+func createTask(c *gin.Context) {
+	var newTask Task
+	if err := c.ShouldBindJSON(&newTask); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	newTask.ID = nextId
+	nextId++
+	tasks = append(tasks, newTask)
+	c.JSON(http.StatusCreated, newTask)
+}
