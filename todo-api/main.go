@@ -82,19 +82,22 @@ func updateTask(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
 }
 
-// func deleteTask(c *gin.Context) {
-// 	id, err := strconv.Atoi(c.Param("id"))
-// 	if err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
-// 		return
-// 	}
+func deleteTask(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
 
-// 	for i, task := range(tasks) {
-// 		if task.ID == id {
-// 			tasks = rm -R
-// 		}
-// 	}
-// }
+	for i, task := range tasks {
+		if task.ID == id {
+			delete(tasks, i)
+			c.JSON(http.StatusOK, task)
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+}
 
 func main() {
 	r := gin.Default()
@@ -102,7 +105,8 @@ func main() {
 	r.GET("/tasks", getTasks)
 	r.GET("/tasks/:id", getTask)
 	r.POST("/tasks", createTask)
-	r.POST("/tasks/:id", updateTask)
+	r.PUT("/tasks/:id", updateTask)
+	r.DELETE("/tasks/:id", deleteTask)
 
 	r.Run(":8080")
 }
