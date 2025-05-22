@@ -10,14 +10,18 @@ import (
 type Task struct {
 	ID        int    `json:"id"`
 	Title     string `json:"title"`
-	Completed bool   `json:"completed"`
+	Completed string `json:"completed"`
 }
 
-var tasks = []Task{}
+var tasks = make(map[int]*Task)
 var nextId = 0
 
 func getTasks(c *gin.Context) {
-	c.JSON(http.StatusOK, tasks)
+	taskList := make([]Task, 0, len(tasks))
+	for _, task := range tasks {
+		taskList = append(taskList, *task)
+	}
+	c.JSON(http.StatusOK, taskList)
 }
 
 func getTask(c *gin.Context) {
@@ -44,8 +48,8 @@ func createTask(c *gin.Context) {
 	}
 
 	newTask.ID = nextId
+	tasks[nextId] = &newTask
 	nextId++
-	tasks = append(tasks, newTask)
 	c.JSON(http.StatusCreated, newTask)
 }
 
@@ -64,15 +68,33 @@ func updateTask(c *gin.Context) {
 
 	for i, task := range tasks {
 		if task.ID == id {
-			tasks[i].Title = updatedTask.Title
-			tasks[i].Completed = updatedTask.Completed
-			c.JSON(http.StatusOK, updatedTask)
+			if updatedTask.Title != "" {
+				tasks[i].Title = updatedTask.Title
+			}
+			if updatedTask.Completed != "" {
+				tasks[i].Completed = updatedTask.Completed
+			}
+			c.JSON(http.StatusOK, tasks[i])
 			return
 		}
 	}
 
 	c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
 }
+
+// func deleteTask(c *gin.Context) {
+// 	id, err := strconv.Atoi(c.Param("id"))
+// 	if err != nil {
+// 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+// 		return
+// 	}
+
+// 	for i, task := range(tasks) {
+// 		if task.ID == id {
+// 			tasks = rm -R
+// 		}
+// 	}
+// }
 
 func main() {
 	r := gin.Default()
