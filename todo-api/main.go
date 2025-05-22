@@ -73,3 +73,14 @@ func updateTask(c *gin.Context) {
 
 	c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
 }
+
+func main() {
+	r := gin.Default()
+
+	r.GET("/tasks", getTasks)
+	r.GET("/tasks/:id", getTask)
+	r.POST("/tasks", createTask)
+	r.POST("/tasks/:id", updateTask)
+
+	r.Run(":8080")
+}
