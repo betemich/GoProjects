@@ -48,3 +48,28 @@ func createTask(c *gin.Context) {
 	tasks = append(tasks, newTask)
 	c.JSON(http.StatusCreated, newTask)
 }
+
+func updateTask(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	var updatedTask Task
+	if err := c.ShouldBindJSON(&updatedTask); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	for i, task := range tasks {
+		if task.ID == id {
+			tasks[i].Title = updatedTask.Title
+			tasks[i].Completed = updatedTask.Completed
+			c.JSON(http.StatusOK, updatedTask)
+			return
+		}
+	}
+
+	c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+}
